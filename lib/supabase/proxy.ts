@@ -2,6 +2,13 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { isSupabaseConfigured, getSupabasePublicEnv } from '@/lib/supabase/env'
 
+function copyCookies(from: NextResponse, to: NextResponse) {
+  from.cookies.getAll().forEach(({ name, value, ...options }) => {
+    to.cookies.set(name, value, options)
+  })
+  return to
+}
+
 export async function updateSession(request: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.next({ request })
@@ -28,7 +35,25 @@ export async function updateSession(request: NextRequest) {
     },
   })
 
-  await supabase.auth.getClaims()
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims
+  const pathname = request.nextUrl.pathname
+  const isAdminRoute = pathname.startsWith('/admin')
+  const isLoginRoute = pathname === '/admin/login'
+
+  if (isAdminRoute && !isLoginRoute && !user) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/admin/login'
+    redirectUrl.searchParams.set('next', pathname)
+    return copyCookies(supabaseResponse, NextResponse.redirect(redirectUrl))
+  }
+
+  if (isLoginRoute && user) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/admin'
+    redirectUrl.search = ''
+    return copyCookies(supabaseResponse, NextResponse.redirect(redirectUrl))
+  }
 
   return supabaseResponse
 }

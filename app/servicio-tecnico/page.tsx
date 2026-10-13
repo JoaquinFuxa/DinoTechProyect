@@ -11,8 +11,8 @@ const devices = [
   ['Smartwatch', Watch], ['Proyector', Monitor], ['Parlante', Headphones], ['Otro', Wrench],
 ] as const
 
-function Header() { return <header className="header service-header"><a href="/" className="logo" aria-label="DinoTech, inicio"><span>Dino</span><b>Tech</b><i>•</i></a><nav className="nav service-nav"><a href="/">Catálogo</a><a href="/#categorias">Categorías</a><a href="/#nosotros">Nosotros</a><a href="/#ubicacion">Encontranos</a></nav><a className="header-cta" href="/">Volver al inicio <ArrowLeft size={16} /></a></header> }
-function Footer() { return <footer className="footer service-footer"><div><a href="/" className="logo"><span>Dino</span><b>Tech</b><i>•</i></a><p>La tecnología del futuro,<br />más cerca de vos.</p></div><div className="footer-links"><a href="/">Catálogo</a><a href="/#categorias">Categorías</a><a href="/#nosotros">Nosotros</a><a href="/#ubicacion">Ubicación</a></div><div className="footer-contact"><span>¿Preferís escribirnos directamente?</span><a href={`https://wa.me/${WA}`} target="_blank" rel="noreferrer">Escribinos por WhatsApp <ArrowRight size={15} /></a></div><div className="footer-bottom"><span>© 2024 DinoTech. Córdoba, Argentina.</span><span>Hecho para descubrir.</span></div></footer> }
+function Header() { return <header className="header service-header"><a href="/" className="logo" aria-label="DinoTech, inicio"><span>Dino</span><b>Tech</b><i>•</i></a><nav className="nav service-nav"><a href="/catalogo">Catálogo</a><a href="/catalogo/celulares">Celulares</a><a href="/catalogo/consolas">Consolas</a><a href="/catalogo/accesorios">Accesorios</a></nav><a className="header-cta" href="/">Volver al inicio <ArrowLeft size={16} /></a></header> }
+function Footer() { return <footer className="footer service-footer"><div><a href="/" className="logo"><span>Dino</span><b>Tech</b><i>•</i></a><p>La tecnología del futuro,<br />más cerca de vos.</p></div><div className="footer-links"><a href="/catalogo">Catálogo</a><a href="/catalogo/celulares">Celulares</a><a href="/catalogo/consolas">Consolas</a><a href="/catalogo/accesorios">Accesorios</a></div><div className="footer-contact"><span>¿Preferís escribirnos directamente?</span><a href={`https://wa.me/${WA}`} target="_blank" rel="noreferrer">Escribinos por WhatsApp <ArrowRight size={15} /></a></div><div className="footer-bottom"><span>© 2024 DinoTech. Córdoba, Argentina.</span><span>Hecho para descubrir.</span></div></footer> }
 
 export default function ServicePage() {
   const [device, setDevice] = useState('')
@@ -49,6 +49,7 @@ export default function ServicePage() {
       void Promise.race([
         supabase.from('service_requests').insert({ name: name.trim(), phone: phone.trim() || null, device_type: selectedDevice, brand_model: model.trim() || null, description: description.trim(), photos: [], status: 'nuevo' }),
         new Promise((resolve) => window.setTimeout(resolve, 5000)),
+        console.log('guardando en supabase'),
       ]).then((result) => {
         if (result && typeof result === 'object' && 'error' in result && result.error) console.error('[v0] No se pudo guardar la consulta en Supabase:', result.error)
       }).catch((saveError) => console.error('[v0] Error guardando la consulta en Supabase:', saveError))

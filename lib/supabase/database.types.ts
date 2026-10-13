@@ -1,5 +1,31 @@
 export type ServiceRequestStatus = 'nuevo' | 'en_proceso' | 'cerrado'
 
+export type ProductCategory = 'celulares' | 'consolas' | 'accesorios'
+
+export type ProductSpec = {
+  label: string
+  value: string
+}
+
+export type Product = {
+  id: string
+  created_at: string
+  updated_at: string
+  name: string
+  slug: string
+  category: ProductCategory
+  short_description: string | null
+  description: string | null
+  price: number
+  old_price: number | null
+  image_url: string | null
+  tag: string | null
+  specs: ProductSpec[]
+  stock: number
+  is_active: boolean
+  featured: boolean
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -36,6 +62,63 @@ export type Database = {
           description?: string
           photos?: string[]
           status?: ServiceRequestStatus
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          id: string
+          created_at: string
+          updated_at: string
+          name: string
+          slug: string
+          category: ProductCategory
+          short_description: string | null
+          description: string | null
+          price: number
+          old_price: number | null
+          image_url: string | null
+          tag: string | null
+          specs: ProductSpec[]
+          stock: number
+          is_active: boolean
+          featured: boolean
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          name: string
+          slug: string
+          category: ProductCategory
+          short_description?: string | null
+          description?: string | null
+          price: number
+          old_price?: number | null
+          image_url?: string | null
+          tag?: string | null
+          specs?: ProductSpec[]
+          stock?: number
+          is_active?: boolean
+          featured?: boolean
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          updated_at?: string
+          name?: string
+          slug?: string
+          category?: ProductCategory
+          short_description?: string | null
+          description?: string | null
+          price?: number
+          old_price?: number | null
+          image_url?: string | null
+          tag?: string | null
+          specs?: ProductSpec[]
+          stock?: number
+          is_active?: boolean
+          featured?: boolean
         }
         Relationships: []
       }

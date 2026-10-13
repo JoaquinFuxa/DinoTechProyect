@@ -2,17 +2,28 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2, X } from 'lucide-react'
+import { ProductFilters } from '@/components/catalog/product-filters'
 import { CATEGORIES } from '@/lib/constants'
+import { emptyProductFilters, filterProducts, uniqueBrands } from '@/lib/product-filters'
+import {
+  categoryLabel,
+  money,
+  normalizeProduct,
+  slugify,
+  specsWithoutBrand,
+  withBrandSpec,
+} from '@/lib/products'
 import { createClient } from '@/lib/supabase/client'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
+import { deleteProductImages, uploadProductImage } from '@/lib/storage-products'
 import type { Product, ProductCategory, ProductSpec } from '@/lib/supabase/database.types'
-import { categoryLabel, money, normalizeProduct, slugify } from '@/lib/products'
 
 type FormState = {
   id?: string
   name: string
   slug: string
   category: ProductCategory
+  brand: string
   short_description: string
   description: string
   price: string
@@ -29,6 +40,7 @@ const emptyForm: FormState = {
   name: '',
   slug: '',
   category: 'celulares',
+  brand: '',
   short_description: '',
   description: '',
   price: '',
@@ -63,6 +75,7 @@ function toForm(product: Product): FormState {
     name: product.name,
     slug: product.slug,
     category: product.category,
+    brand: product.brand || '',
     short_description: product.short_description || '',
     description: product.description || '',
     price: String(product.price),
@@ -72,7 +85,7 @@ function toForm(product: Product): FormState {
     stock: String(product.stock),
     is_active: product.is_active,
     featured: product.featured,
-    specsText: specsToText(product.specs),
+    specsText: specsToText(specsWithoutBrand(product.specs)),
   }
 }
 
@@ -83,18 +96,21 @@ export default function AdminCatalogPage() {
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<FormState>(emptyForm)
-  const [query, setQuery] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [filters, setFilters] = useState(emptyProductFilters)
+  const [selected, setSelected] = useState<string[]>([])
+  const [discount, setDiscount] = useState('10')
+  const [batchCategory, setBatchCategory] = useState<ProductCategory | ''>('')
+  const [batchStatus, setBatchStatus] = useState<'' | 'active' | 'hidden'>('')
+  const [batchBusy, setBatchBusy] = useState(false)
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return products
-    return products.filter(
-      (product) =>
-        product.name.toLowerCase().includes(q) ||
-        product.category.includes(q) ||
-        product.slug.includes(q),
-    )
-  }, [products, query])
+  const brands = useMemo(() => uniqueBrands(products), [products])
+  const filtered = useMemo(() => filterProducts(products, filters), [products, filters])
+  const allFilteredSelected = filtered.length > 0 && filtered.every((product) => selected.includes(product.id))
+  const selectedProducts = useMemo(
+    () => products.filter((product) => selected.includes(product.id)),
+    [products, selected],
+  )
 
   async function loadProducts() {
     if (!isSupabaseConfigured()) {
@@ -129,13 +145,28 @@ export default function AdminCatalogPage() {
     void loadProducts()
   }, [])
 
+  function toggleOne(id: string) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]))
+  }
+
+  function toggleAll() {
+    if (allFilteredSelected) {
+      const visible = new Set(filtered.map((product) => product.id))
+      setSelected((prev) => prev.filter((id) => !visible.has(id)))
+      return
+    }
+    setSelected((prev) => Array.from(new Set([...prev, ...filtered.map((product) => product.id)])))
+  }
+
   function openCreate() {
     setForm(emptyForm)
+    setImageFile(null)
     setOpen(true)
   }
 
   function openEdit(product: Product) {
     setForm(toForm(product))
+    setImageFile(null)
     setOpen(true)
   }
 
@@ -155,23 +186,31 @@ export default function AdminCatalogPage() {
       return
     }
 
-    const payload = {
-      name: form.name.trim(),
-      slug,
-      category: form.category,
-      short_description: form.short_description.trim() || null,
-      description: form.description.trim() || null,
-      price,
-      old_price: oldPrice != null && !Number.isNaN(oldPrice) ? oldPrice : null,
-      image_url: form.image_url.trim() || null,
-      tag: form.tag.trim() || null,
-      stock: Number.isNaN(stock) ? 0 : stock,
-      is_active: form.is_active,
-      featured: form.featured,
-      specs: textToSpecs(form.specsText),
-    }
-
     try {
+      let imageUrl = form.image_url.trim() || null
+      if (imageFile) {
+        imageUrl = await uploadProductImage(imageFile)
+        if (form.image_url && form.image_url !== imageUrl) {
+          await deleteProductImages([form.image_url])
+        }
+      }
+
+      const payload = {
+        name: form.name.trim(),
+        slug,
+        category: form.category,
+        short_description: form.short_description.trim() || null,
+        description: form.description.trim() || null,
+        price,
+        old_price: oldPrice != null && !Number.isNaN(oldPrice) ? oldPrice : null,
+        image_url: imageUrl,
+        tag: form.tag.trim() || null,
+        stock: Number.isNaN(stock) ? 0 : stock,
+        is_active: form.is_active,
+        featured: form.featured,
+        specs: withBrandSpec(textToSpecs(form.specsText), form.brand),
+      }
+
       const supabase = createClient()
       const result = form.id
         ? await supabase.from('products').update(payload).eq('id', form.id)
@@ -185,6 +224,7 @@ export default function AdminCatalogPage() {
 
       setOpen(false)
       setForm(emptyForm)
+      setImageFile(null)
       await loadProducts()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar el producto.')
@@ -203,9 +243,81 @@ export default function AdminCatalogPage() {
         setError(deleteError.message)
         return
       }
+      await deleteProductImages([product.image_url])
+      setSelected((prev) => prev.filter((id) => id !== product.id))
       await loadProducts()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo eliminar el producto.')
+    }
+  }
+
+  async function bulkDelete() {
+    if (selectedProducts.length === 0) return
+    if (!window.confirm(`¿Eliminar ${selectedProducts.length} productos y sus imágenes?`)) return
+    setBatchBusy(true)
+    setError('')
+    try {
+      const ids = selectedProducts.map((product) => product.id)
+      const supabase = createClient()
+      const { error: deleteError } = await supabase.from('products').delete().in('id', ids)
+      if (deleteError) throw deleteError
+      await deleteProductImages(selectedProducts.map((product) => product.image_url))
+      setSelected([])
+      await loadProducts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar la selección.')
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  async function bulkDiscount() {
+    const percent = Number(discount)
+    if (!selected.length || Number.isNaN(percent) || percent <= 0 || percent >= 100) {
+      setError('Ingresá un porcentaje entre 1 y 99.')
+      return
+    }
+    setBatchBusy(true)
+    setError('')
+    try {
+      const supabase = createClient()
+      const { error: rpcError } = await supabase.rpc('apply_products_discount', {
+        product_ids: selected,
+        percent,
+      })
+      if (rpcError) throw rpcError
+      setSelected([])
+      await loadProducts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo aplicar el descuento.')
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  async function bulkUpdateMeta() {
+    if (!selected.length || (!batchCategory && !batchStatus)) {
+      setError('Elegí una categoría o un estado para aplicar.')
+      return
+    }
+    setBatchBusy(true)
+    setError('')
+    try {
+      const supabase = createClient()
+      const { error: rpcError } = await supabase.rpc('bulk_update_products', {
+        product_ids: selected,
+        new_category: batchCategory || null,
+        new_is_active: batchStatus === '' ? null : batchStatus === 'active',
+      })
+      if (rpcError) throw rpcError
+      setSelected([])
+      setBatchCategory('')
+      setBatchStatus('')
+      await loadProducts()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo actualizar la selección.')
+    } finally {
+      setBatchBusy(false)
     }
   }
 
@@ -222,12 +334,7 @@ export default function AdminCatalogPage() {
       </header>
 
       <div className="admin-toolbar">
-        <input
-          className="service-input"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar por nombre, categoría o slug"
-        />
+        <ProductFilters filters={filters} brands={brands} variant="admin" onChange={setFilters} />
       </div>
 
       {error ? (
@@ -245,7 +352,16 @@ export default function AdminCatalogPage() {
           <table className="admin-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleAll}
+                    aria-label="Seleccionar todos"
+                  />
+                </th>
                 <th>Producto</th>
+                <th>Marca</th>
                 <th>Categoría</th>
                 <th>Precio</th>
                 <th>Stock</th>
@@ -255,11 +371,20 @@ export default function AdminCatalogPage() {
             </thead>
             <tbody>
               {filtered.map((product) => (
-                <tr key={product.id}>
+                <tr key={product.id} className={selected.includes(product.id) ? 'is-selected' : ''}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(product.id)}
+                      onChange={() => toggleOne(product.id)}
+                      aria-label={`Seleccionar ${product.name}`}
+                    />
+                  </td>
                   <td>
                     <strong>{product.name}</strong>
                     <small>/{product.slug}</small>
                   </td>
+                  <td>{product.brand || '—'}</td>
                   <td>{categoryLabel(product.category)}</td>
                   <td>{money(product.price)}</td>
                   <td>{product.stock}</td>
@@ -282,6 +407,56 @@ export default function AdminCatalogPage() {
           </table>
         </div>
       )}
+
+      {selected.length > 0 ? (
+        <div className="admin-batch-bar">
+          <strong>{selected.length} seleccionados</strong>
+          <label>
+            %
+            <input
+              className="service-input"
+              type="number"
+              min="1"
+              max="99"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value)}
+            />
+          </label>
+          <button type="button" className="btn-primary" disabled={batchBusy} onClick={() => void bulkDiscount()}>
+            Aplicar descuento
+          </button>
+          <select
+            className="service-input"
+            value={batchCategory}
+            onChange={(e) => setBatchCategory(e.target.value as ProductCategory | '')}
+          >
+            <option value="">Categoría</option>
+            {CATEGORIES.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="service-input"
+            value={batchStatus}
+            onChange={(e) => setBatchStatus(e.target.value as '' | 'active' | 'hidden')}
+          >
+            <option value="">Estado</option>
+            <option value="active">Activo</option>
+            <option value="hidden">Oculto</option>
+          </select>
+          <button type="button" className="btn-outline" disabled={batchBusy} onClick={() => void bulkUpdateMeta()}>
+            Aplicar cambios
+          </button>
+          <button type="button" className="btn-danger" disabled={batchBusy} onClick={() => void bulkDelete()}>
+            Eliminar
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setSelected([])}>
+            Limpiar
+          </button>
+        </div>
+      ) : null}
 
       {open ? (
         <div className="admin-modal-backdrop">
@@ -335,6 +510,15 @@ export default function AdminCatalogPage() {
                 </select>
               </label>
               <label>
+                Marca
+                <input
+                  className="service-input"
+                  value={form.brand}
+                  onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))}
+                  placeholder="Apple, Sony, Logitech..."
+                />
+              </label>
+              <label>
                 Tag
                 <input
                   className="service-input"
@@ -376,14 +560,20 @@ export default function AdminCatalogPage() {
                   onChange={(e) => setForm((prev) => ({ ...prev, stock: e.target.value }))}
                 />
               </label>
-              <label>
-                Imagen URL
+              <label className="span-2">
+                Imagen (se comprime a WebP)
                 <input
                   className="service-input"
-                  value={form.image_url}
-                  onChange={(e) => setForm((prev) => ({ ...prev, image_url: e.target.value }))}
-                  placeholder="https://..."
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setImageFile(e.target.files?.[0] ?? null)}
                 />
+                {form.image_url ? (
+                  <small className="image-url-hint">URL pública: {form.image_url}</small>
+                ) : null}
+                {form.image_url ? (
+                  <img src={form.image_url} alt="Vista previa" className="admin-image-preview" />
+                ) : null}
               </label>
               <label className="span-2">
                 Descripción corta

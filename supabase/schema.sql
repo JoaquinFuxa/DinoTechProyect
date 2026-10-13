@@ -36,6 +36,7 @@ create table if not exists public.products (
   price numeric(12,2) not null,
   old_price numeric(12,2),
   image_url text,
+  brand text,
   tag text,
   specs jsonb not null default '[]'::jsonb,
   stock integer not null default 0,
@@ -94,3 +95,107 @@ create policy "authenticated_delete_products"
   for delete
   to authenticated
   using (true);
+
+alter table public.products add column if not exists brand text;
+create index if not exists products_brand_idx on public.products (brand);
+create index if not exists products_price_idx on public.products (price);
+
+insert into storage.buckets (id, name, public)
+values ('productos', 'productos', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "public_read_productos" on storage.objects;
+create policy "public_read_productos"
+  on storage.objects
+  for select
+  to public
+  using (bucket_id = 'productos');
+
+drop policy if exists "authenticated_insert_productos" on storage.objects;
+create policy "authenticated_insert_productos"
+  on storage.objects
+  for insert
+  to authenticated
+  with check (bucket_id = 'productos');
+
+drop policy if exists "authenticated_update_productos" on storage.objects;
+create policy "authenticated_update_productos"
+  on storage.objects
+  for update
+  to authenticated
+  using (bucket_id = 'productos')
+  with check (bucket_id = 'productos');
+
+drop policy if exists "authenticated_delete_productos" on storage.objects;
+create policy "authenticated_delete_productos"
+  on storage.objects
+  for delete
+  to authenticated
+  using (bucket_id = 'productos');
+
+create or replace function public.apply_products_discount(product_ids uuid[], percent numeric)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  updated_count integer;
+begin
+  if product_ids is null or array_length(product_ids, 1) is null then
+    raise exception 'Seleccioná al menos un producto.';
+  end if;
+  if percent is null or percent <= 0 or percent >= 100 then
+    raise exception 'El porcentaje debe estar entre 0 y 100.';
+  end if;
+
+  update public.products
+  set
+    old_price = coalesce(old_price, price),
+    price = round((price * (1 - percent / 100))::numeric, 2),
+    tag = case when coalesce(tag, '') = '' then 'Oferta' else tag end
+  where id = any(product_ids);
+
+  get diagnostics updated_count = row_count;
+  return updated_count;
+end;
+$$;
+
+create or replace function public.bulk_update_products(
+  product_ids uuid[],
+  new_category text default null,
+  new_is_active boolean default null
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  updated_count integer;
+begin
+  if product_ids is null or array_length(product_ids, 1) is null then
+    raise exception 'Seleccioná al menos un producto.';
+  end if;
+  if new_category is not null and new_category not in ('celulares', 'consolas', 'accesorios') then
+    raise exception 'Categoría inválida.';
+  end if;
+  if new_category is null and new_is_active is null then
+    raise exception 'Indicá categoría o estado.';
+  end if;
+
+  update public.products
+  set
+    category = coalesce(new_category, category),
+    is_active = coalesce(new_is_active, is_active)
+  where id = any(product_ids);
+
+  get diagnostics updated_count = row_count;
+  return updated_count;
+end;
+$$;
+
+revoke all on function public.apply_products_discount(uuid[], numeric) from public;
+revoke all on function public.bulk_update_products(uuid[], text, boolean) from public;
+grant execute on function public.apply_products_discount(uuid[], numeric) to authenticated;
+grant execute on function public.bulk_update_products(uuid[], text, boolean) to authenticated;

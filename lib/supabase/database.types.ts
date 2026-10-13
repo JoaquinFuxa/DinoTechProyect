@@ -19,6 +19,7 @@ export type Product = {
   price: number
   old_price: number | null
   image_url: string | null
+  brand?: string | null
   tag: string | null
   specs: ProductSpec[]
   stock: number
@@ -78,6 +79,7 @@ export type Database = {
           price: number
           old_price: number | null
           image_url: string | null
+          brand?: string | null
           tag: string | null
           specs: ProductSpec[]
           stock: number
@@ -96,6 +98,7 @@ export type Database = {
           price: number
           old_price?: number | null
           image_url?: string | null
+          brand?: string | null
           tag?: string | null
           specs?: ProductSpec[]
           stock?: number
@@ -114,6 +117,7 @@ export type Database = {
           price?: number
           old_price?: number | null
           image_url?: string | null
+          brand?: string | null
           tag?: string | null
           specs?: ProductSpec[]
           stock?: number
@@ -124,7 +128,20 @@ export type Database = {
       }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      apply_products_discount: {
+        Args: { product_ids: string[]; percent: number }
+        Returns: number
+      }
+      bulk_update_products: {
+        Args: {
+          product_ids: string[]
+          new_category?: ProductCategory | null
+          new_is_active?: boolean | null
+        }
+        Returns: number
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }

@@ -1,7 +1,7 @@
 import { ArrowRight, ChevronRight, Gamepad2, Headphones, Smartphone } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
-import { categoryLabel, money, normalizeProduct, productWhatsAppUrl } from '@/lib/products'
+import { categoryLabel, money, normalizeProduct, productImageUrl, productWhatsAppUrl } from '@/lib/products'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
 import { createClient } from '@/lib/supabase/server'
 import type { Product, ProductCategory } from '@/lib/supabase/database.types'
@@ -37,6 +37,7 @@ export default async function ProductDetailPage({
 
   const Icon = icons[product.category]
   const whatsappUrl = productWhatsAppUrl(product)
+  const image = productImageUrl(product)
 
   return (
     <main className="site-shell catalog-page product-detail-page">
@@ -56,8 +57,8 @@ export default async function ProductDetailPage({
           <div className="product-detail-media">
             <div className={`product-visual visual-${product.category} detail-visual`}>
               <div className="visual-grid" />
-              {product.image_url ? (
-                <img src={product.image_url} alt={product.name} className="product-image" />
+              {image ? (
+                <img src={image} alt={product.name} className="product-image" />
               ) : (
                 <Icon className="visual-icon" />
               )}
@@ -65,7 +66,10 @@ export default async function ProductDetailPage({
           </div>
 
           <div className="product-detail-copy">
-            <p className="kicker">{categoryLabel(product.category)}</p>
+            <p className="kicker">
+              {categoryLabel(product.category)}
+              {product.brand ? ` · ${product.brand}` : ''}
+            </p>
             {product.tag ? (
               <span className={`badge ${product.tag === 'Oferta' ? 'offer' : product.tag === 'Nuevo' ? 'new' : ''}`}>
                 {product.tag}

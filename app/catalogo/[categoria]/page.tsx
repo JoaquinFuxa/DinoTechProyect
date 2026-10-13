@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
-import { ProductCard } from '@/components/catalog/product-card'
+import { CatalogBrowser } from '@/components/catalog/catalog-browser'
 import { CATEGORIES } from '@/lib/constants'
 import { categoryLabel, isProductCategory, normalizeProduct } from '@/lib/products'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
@@ -70,11 +70,7 @@ export default async function CategoryCatalogPage({
           {products.length === 0 ? (
             <p className="catalog-empty">No hay productos en esta categoría por ahora.</p>
           ) : (
-            <div className="product-grid">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
+            <CatalogBrowser products={products} initialCategory={categoria} />
           )}
         </section>
       </div>
